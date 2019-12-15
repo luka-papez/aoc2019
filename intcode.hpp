@@ -389,3 +389,26 @@ execution_state_t IntcodeInstruction::execute(IntcodeVM& vm, int64_t& output, in
 
 	return state;
 }
+
+void display(std::map<std::pair<int64_t, int64_t>, char>& screen)
+{
+	auto compare_y = [](const auto& p1, const auto& p2) { return p1.first.second < p2.first.second; };
+	auto min_x = std::min_element(screen.begin(), screen.end())->first.first;
+	auto min_y = std::min_element(screen.begin(), screen.end(), compare_y)->first.second;
+	auto max_x = std::max_element(screen.begin(), screen.end())->first.first;
+	auto max_y = std::max_element(screen.begin(), screen.end(), compare_y)->first.second;
+
+	for (int64_t y = min_y; y <= max_y; y++)
+	{
+		for (int64_t x = min_x; x <= max_x; x++)
+		{
+			auto val = screen[{ x, y }];
+
+			std::cout << (val ? val : ' ');
+		}
+
+		std::cout << std::endl;
+	}
+
+	std::cout << std::endl;
+}
