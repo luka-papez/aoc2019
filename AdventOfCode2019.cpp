@@ -742,7 +742,7 @@ struct HullPainter
 
 	void paint()
 	{
-		panel_colors[{ position_x, position_y }] = initial_color;
+		panel_colors[{ position_x, position_y }] = initial_color ? '*' : ' ';
 
 		while (true)
 		{
@@ -1194,6 +1194,204 @@ std::pair<int64_t, int64_t> day_14(const std::string& input_filepath)
 	return { ore_for_one_fuel, lower_bound };
 }
 
+using position_t = std::pair<int64_t, int64_t>;
+
+enum direction_t : int64_t
+{
+	north = 1,
+	south,
+	west,
+	east,
+	direction_last
+};
+
+enum symbols_t : char
+{
+	droid = 'D',
+	wall = '#',
+	space = '.',
+	oxygen = 'x'
+};
+
+position_t operator+(position_t lhs, int64_t direction)
+{
+	switch (direction)
+	{
+	case direction_t::north:
+		lhs.second--;
+		break;
+
+	case direction_t::south:
+		lhs.second++;
+		break;
+
+	case direction_t::east:
+		lhs.first--;
+		break;
+
+	case direction_t::west:
+		lhs.first++;
+		break;
+	}
+
+	return lhs;
+}
+
+struct RepairDroid
+{
+	std::map<position_t, char> world;
+	position_t oxygen_position;
+
+	enum status_t : int64_t
+	{
+		blocked,
+		success,
+		finished
+	};
+
+	RepairDroid(position_t starting = { 0, 0 }) : world{}, oxygen_position{}
+	{
+		world[starting] = droid;
+	}
+
+	void explore(IntcodeVM vm, position_t current, int64_t direction)
+	{
+		auto moved_to = current;
+		moved_to = moved_to + direction;
+
+		if (world[moved_to])
+			return;
+
+		int64_t output;
+		vm.run(output, direction);
+		vm.run(output, direction);
+
+		switch (output)
+		{
+		case blocked:
+			world[moved_to] = wall;
+			return;
+
+		case success:
+			world[moved_to] = space;
+			break;
+
+		case finished:
+			world[moved_to] = oxygen;
+			oxygen_position = moved_to;
+			break;
+		}
+
+		step(vm, moved_to);
+	}
+
+	void step(IntcodeVM vm, position_t current = {})
+	{
+		for (int64_t direction = north; direction < direction_last; direction++)
+		{
+			explore(vm, current, direction);
+		}
+	}
+};
+
+using position_with_priority_t = std::pair<position_t, int64_t>;
+auto priority_comparer = [](const position_with_priority_t& p1, const position_with_priority_t& p2)
+{
+	return p1.second < p2.second;
+};	
+
+bool a_star(
+	std::map<position_t, char>& world,
+	position_t start, 
+	position_t goal, 
+	std::function <int64_t(position_t, position_t)> heuristic,
+	std::vector<position_t>& path
+)
+{
+	using storage_t = std::vector<position_with_priority_t>;
+	std::priority_queue<storage_t::value_type, storage_t, decltype(priority_comparer)> frontier(priority_comparer);
+	std::map<position_t, position_t> came_from;
+	std::map<position_t, int64_t> cost_to;
+
+	frontier.push({ start, 0 });
+	came_from[start] = start;
+	cost_to[start]   = 0;
+
+	while (!frontier.empty())
+	{
+		auto top = frontier.top();
+		frontier.pop();
+
+		position_t current = top.first;
+		if (current == goal)
+		{
+			current = goal;
+			path.push_back(current);
+
+			while (current != start)
+			{
+				current = came_from[current];
+				path.push_back(current);
+			}
+
+			return true;
+		}
+
+		for (int64_t direction = north; direction < direction_last; direction++)
+		{
+			auto next = current + direction;
+
+			if (world[next] == wall)
+				continue;
+
+			auto new_cost = cost_to[current] + 1;
+
+			if (cost_to.find(next) == cost_to.end() || new_cost < cost_to[next])
+			{
+				cost_to[next] = new_cost;
+				frontier.push({ next, new_cost + heuristic(next, goal) });
+				came_from[next] = current;
+			}
+		}
+	}
+
+	return false;
+}
+
+int64_t flood_fill(std::map<position_t, char>& world, position_t start)
+{
+	std::queue<position_t> currently_have_oxygen;
+	std::queue<position_t> will_have_oxygen({ start });
+
+	int64_t steps_needed = 0;
+	
+	do
+	{
+		std::swap(currently_have_oxygen, will_have_oxygen);
+
+		do
+		{
+			auto current = currently_have_oxygen.front();
+			currently_have_oxygen.pop();
+
+			for (int64_t direction = north; direction < direction_last; direction++)
+			{
+				auto next = current + direction;
+				if (world[next] == wall || world[next] == oxygen)
+					continue;
+
+				world[next] = oxygen;
+				will_have_oxygen.push(next);
+			}
+		} while (!currently_have_oxygen.empty());
+		
+		steps_needed++;
+
+	} while (!will_have_oxygen.empty());
+
+	return steps_needed - 1; // because i'm counting the first one as a step
+}
+
 std::pair<int64_t, int64_t> day_15(const std::string& input_filepath)
 {
 	std::vector<int64_t> opcodes;
@@ -1202,7 +1400,22 @@ std::pair<int64_t, int64_t> day_15(const std::string& input_filepath)
 		for (auto opcode : next_line_token<int64_t>(line))
 			opcodes.push_back(opcode);
 
-	return { 0, 0 };
+	IntcodeVM program(opcodes);
+	RepairDroid droid;
+
+	droid.step(program);
+	display(droid.world);
+
+	auto manhattan_distance = [](position_t p1, position_t p2) -> int64_t
+	{
+		return std::abs(p2.second - p1.second) + std::abs(p2.first - p1.first);
+	};
+	std::vector<position_t> path_to_oxygen;
+	a_star(droid.world, {}, droid.oxygen_position, manhattan_distance, path_to_oxygen);
+
+	int64_t steps_taken = flood_fill(droid.world, droid.oxygen_position);
+
+	return { path_to_oxygen.size() - 1, steps_taken };
 }
 
 int main(int argc, char* argv[])
