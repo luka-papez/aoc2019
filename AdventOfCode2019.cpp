@@ -818,14 +818,6 @@ struct ArcadeCabinet
 		ball
 	};
 
-	enum arrow_key_t : int64_t
-	{
-		up = 72,
-		down = 80,
-		left = 75,
-		right = 77
-	};
-
 	void render()
 	{
 		int64_t last_y = 0;
@@ -1418,6 +1410,104 @@ std::pair<int64_t, int64_t> day_15(const std::string& input_filepath)
 	return { path_to_oxygen.size() - 1, steps_taken };
 }
 
+enum hull_t : char
+{
+	scaffolding = '#',
+	robot_up = '^',
+	robot_down = 'v',
+	robot_left = '<',
+	robot_right = '>',
+	robot_space = 'X'
+};
+
+using position_and_direction_t = std::pair<position_t, direction_t>;
+
+enum side_t : char
+{
+	left = 'L',
+	right = 'R'
+};
+
+void find_intersections(std::map<position_t, char>& world, std::vector<position_t>& intersections)
+{
+	auto robot = std::find_if(world.begin(), world.end(), [](const auto& p) { return !(p.second == space || p.second == scaffolding); });
+	auto scaffolds = std::count_if(world.begin(), world.end(), [](const auto& p) { return p.second == scaffolding; });
+
+	std::set<position_t> visited;
+	std::queue<position_t> places_to_go({ robot->first });
+
+	do
+	{
+		auto current = places_to_go.front();
+		places_to_go.pop();
+
+		if (visited.count(current))
+			continue;
+
+		int64_t available_directions = 0;
+
+		for (int64_t direction = north; direction < direction_last; direction++)
+		{
+			auto next = current + direction;
+			if (!world.count(next) || visited.count(next) || world[next] == space)
+				continue;
+
+			available_directions++;
+			places_to_go.push(next);
+		}
+
+		if (available_directions > 1)
+			intersections.push_back(current);
+
+		visited.insert(current);
+
+	} while (visited.size() != scaffolds);
+}
+
+std::pair<int64_t, int64_t> day_17(const std::string& input_filepath)
+{
+	IntcodeVM part1_vm(input_filepath);
+
+	std::map<position_t, char> world;
+	position_t current{};
+	int64_t output = 0;
+
+	while (part1_vm.run(output, 0) != execution_state_t::halted)
+	{
+		if (output == '\n')
+		{
+			current.first = 0;
+			current.second++;
+			continue;
+		}
+		
+		world[current] = static_cast<char>(output);
+		current.first++;
+	}
+
+	display(world);
+
+	std::vector<position_t> intersections;
+	find_intersections(world, intersections);
+	auto part1_solution = std::accumulate(intersections.begin(), intersections.end(), 0ll, [](const auto acc, const auto& p)
+	{
+		return acc + p.first * p.second;
+	});
+
+	// manual, probably can be solved by using a_star and instruction string length as heuristic but nah
+	std::string main = "A,B,A,B,C,B,A,C,B,C\n";
+	std::string A = "L,12,L,8,R,10,R,10\n";
+	std::string B = "L,6,L,4,L,12\n";
+	std::string C = "R,10,L,8,L,4,R,10\n";
+	std::string p = "n\n";
+	std::string input = main + A + B + C + p;
+
+	IntcodeVM part2_vm(input_filepath);
+	part2_vm.memory[0] = 2;
+
+	return { part1_solution, part2_vm.run_on(input) };
+}
+
 int main(int argc, char* argv[])
 {
 	size_t day;
@@ -1442,7 +1532,8 @@ int main(int argc, char* argv[])
 		{ 12, day_12 },
 		{ 13, day_13 },
 		{ 14, day_14 },
-		{ 15, day_15 }
+		{ 15, day_15 },
+		{ 17, day_17 }
 	};
 
 	auto[part_1_answer, part_2_answer] = calling_map[day](input_filepath);
