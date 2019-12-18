@@ -1420,14 +1420,6 @@ enum hull_t : char
 	robot_space = 'X'
 };
 
-using position_and_direction_t = std::pair<position_t, direction_t>;
-
-enum side_t : char
-{
-	left = 'L',
-	right = 'R'
-};
-
 void find_intersections(std::map<position_t, char>& world, std::vector<position_t>& intersections)
 {
 	auto robot = std::find_if(world.begin(), world.end(), [](const auto& p) { return !(p.second == space || p.second == scaffolding); });
