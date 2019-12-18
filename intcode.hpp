@@ -117,6 +117,39 @@ struct IntcodeVM
 
 		return state;
 	}
+
+	template <typename InputContainer, typename OutputContainer>
+	int64_t run_on(OutputContainer& output, InputContainer& input)
+	{
+		int64_t vm_output = 0;
+		int64_t consumed = 0;
+		execution_state_t state{};
+
+		while ((state = run(vm_output, input[consumed])) != execution_state_t::halted)
+		{
+			switch (state)
+			{
+			case execution_state_t::consumed_value:
+				consumed++;
+				break;
+			case execution_state_t::provided_value:
+				output.push_back(static_cast<OutputContainer::value_type>(vm_output));
+				break;
+			default:
+				break;
+			}
+		}
+
+		return vm_output;
+	}
+
+	template <typename InputContainer>
+	int64_t run_on(InputContainer& input)
+	{
+		std::vector<int64_t> output;
+
+		return run_on(output, input);
+	}
 };
 
 #define SRC(x) int64_t src##x = parameters[x - 1].get_value(arguments[x - 1], vm.memory, vm.relative_base)
@@ -404,7 +437,7 @@ void display(std::map<std::pair<int64_t, int64_t>, char>& screen)
 		{
 			auto val = screen[{ x, y }];
 
-			std::cout << (val ? val : ' ');
+			std::cout << (val ? val : ' ') << ' ';
 		}
 
 		std::cout << std::endl;
