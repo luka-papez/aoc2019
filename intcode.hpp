@@ -118,6 +118,13 @@ struct IntcodeVM
 		return state;
 	}
 
+	execution_state_t run(int64_t& output)
+	{
+		int64_t dummy_input = 0;
+
+		return run(output, dummy_input);
+	}
+
 	template <typename InputContainer, typename OutputContainer>
 	int64_t run_on(OutputContainer& output, InputContainer& input)
 	{
@@ -423,7 +430,7 @@ execution_state_t IntcodeInstruction::execute(IntcodeVM& vm, int64_t& output, in
 	return state;
 }
 
-void display(std::map<std::pair<int64_t, int64_t>, char>& screen)
+void display(std::map<std::pair<int64_t, int64_t>, char>& screen, bool extra_space = true)
 {
 	auto compare_y = [](const auto& p1, const auto& p2) { return p1.first.second < p2.first.second; };
 	auto min_x = std::min_element(screen.begin(), screen.end())->first.first;
@@ -437,7 +444,10 @@ void display(std::map<std::pair<int64_t, int64_t>, char>& screen)
 		{
 			auto val = screen[{ x, y }];
 
-			std::cout << (val ? val : ' ') << ' ';
+			std::cout << (val ? val : ' ');
+			
+			if (extra_space)
+				std::cout << ' ';
 		}
 
 		std::cout << std::endl;
