@@ -1500,6 +1500,82 @@ std::pair<int64_t, int64_t> day_17(const std::string& input_filepath)
 	return { part1_solution, part2_vm.run_on(input) };
 }
 
+std::pair<int64_t, int64_t> day_19(const std::string& input_filepath)
+{
+	std::vector<int64_t> opcodes;
+	
+	for (auto line : next_file_line(input_filepath))
+		for (auto opcode : next_line_token<int64_t>(line))
+			opcodes.push_back(opcode);
+
+	int64_t output;
+
+	std::map<position_t, char> world;
+
+	int64_t part1 = 0;
+
+	for (int64_t y = 0; y < 50; y++)
+	{
+		for (int64_t x = 0; x < 50; x++)
+		{
+			IntcodeVM drones(opcodes);
+
+			drones.run(output, x);
+			drones.run(output, y);
+			drones.run(output);
+
+			world[{ x, y }] = output ? '#' : '.';
+
+			if (output)
+				part1++;
+		}
+	}
+
+	display(world, false);
+
+	int64_t ship_size = 100;
+	ship_size--; // makes it easier to work later
+
+	int64_t start_x = 0;
+	int64_t y = ship_size;
+
+	while (true)
+	{
+		int64_t x = start_x;
+
+		while (true)
+		{
+			// I bet they made the program non-reentrant so we couldn't brute force this
+			IntcodeVM drones(opcodes);
+			drones.run(output, x);
+			drones.run(output, y);
+			drones.run(output);
+
+			if (output)
+			{
+				start_x = x;
+				break;
+			}
+
+			x++;
+		}
+
+		IntcodeVM drones(opcodes);
+		drones.run(output, x + ship_size);
+		drones.run(output, y - ship_size);
+		drones.run(output);
+
+		if (output)
+		{
+			break;
+		}
+
+		y++;
+	}
+
+	return { part1, 10000 * start_x + (y - ship_size) };
+}
+
 int main(int argc, char* argv[])
 {
 	size_t day;
@@ -1525,7 +1601,8 @@ int main(int argc, char* argv[])
 		{ 13, day_13 },
 		{ 14, day_14 },
 		{ 15, day_15 },
-		{ 17, day_17 }
+		{ 17, day_17 },
+		{ 19, day_19 }
 	};
 
 	auto[part_1_answer, part_2_answer] = calling_map[day](input_filepath);
