@@ -1410,6 +1410,82 @@ std::pair<int64_t, int64_t> day_15(const std::string& input_filepath)
 	return { path_to_oxygen.size() - 1, steps_taken };
 }
 
+void fft(std::string& input, std::string& output)
+{
+	std::array<int64_t, 4> pattern = { 0, 1, 0, -1 };
+
+	for (int64_t line = 0; line < input.size(); line++)
+	{
+		int64_t current = 0;
+		for (int64_t i = 0; i < input.size(); i++)
+		{
+			current += input[i] * pattern[(1 + i) / (1 + line) % pattern.size()];
+		}
+
+		if (current < 0)
+			current *= -1;
+
+		output[line] = current % 10;
+	}
+}
+
+int64_t get_digits(std::string& input, int64_t n = 8, int64_t offset = 0)
+{
+	int64_t result = 0;
+
+	for (int64_t i = n - 1, radix = 1; i >= 0; i--, radix *= 10)
+		result += radix * input[i + offset];
+
+	return result;
+}
+
+// not a fan of these tricks
+int64_t extract_message(std::string& input, int64_t num_phases, int64_t repetitions)
+{
+	std::string partials;
+	partials.reserve(input.size() * repetitions);
+	for (size_t i = 0; i < repetitions; i++)
+		partials += input;
+	
+	int64_t offset = get_digits(input, 7, 0);
+
+	partials = partials.substr(offset);
+
+	for (size_t phase = 0; phase < num_phases; phase++)
+	{
+		for (int64_t i = partials.size() - 2; i >= 0; i--)
+			partials[i] = (partials[i] + partials[i + 1]) % 10;
+	}
+
+	return get_digits(partials, 8);
+}
+
+std::pair<int64_t, int64_t> day_16(const std::string& input_filepath)
+{
+	std::string input;
+
+	for (auto line : next_file_line(input_filepath))
+		input = line;
+
+	for (auto& c : input)
+		c -= '0';
+
+	std::string buffer = input;
+	std::string original_input = input;
+
+	int64_t num_phases = 100;
+
+	for (size_t phase = 0; phase < num_phases; phase++)
+	{
+		fft(input, buffer);
+		std::swap(buffer, input);
+	}
+
+	int64_t part1 = get_digits(input, 8, 0);
+
+	return { part1, extract_message(original_input, num_phases, 10000) };
+}
+
 enum hull_t : char
 {
 	scaffolding = '#',
@@ -1601,6 +1677,7 @@ int main(int argc, char* argv[])
 		{ 13, day_13 },
 		{ 14, day_14 },
 		{ 15, day_15 },
+		{ 16, day_16 },
 		{ 17, day_17 },
 		{ 19, day_19 }
 	};
