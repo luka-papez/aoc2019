@@ -455,3 +455,10 @@ void display(std::map<std::pair<int64_t, int64_t>, char>& screen, bool extra_spa
 
 	std::cout << std::endl;
 }
+
+template <typename Container>
+void display(Container& world)
+{
+	for (auto& c : world)
+		std::cout << static_cast<char>(c);
+}

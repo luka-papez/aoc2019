@@ -1652,6 +1652,42 @@ std::pair<int64_t, int64_t> day_19(const std::string& input_filepath)
 	return { part1, 10000 * start_x + (y - ship_size) };
 }
 
+std::pair<int64_t, int64_t> day_21(const std::string& input_filepath)
+{
+	std::vector<int64_t> outputs;
+
+	// if can land 4 tiles away and hole in between -> jump
+	IntcodeVM walker(input_filepath);
+	std::string walker_script= R"(OR A J
+AND B J
+AND C J
+NOT J J
+AND D J
+WALK
+)";
+	int64_t part1 = walker.run_on(outputs, walker_script);
+	display(outputs);
+	outputs.clear();
+
+	// if can land 4 or 5 or 8 tiles away and hole in between -> jump
+	IntcodeVM runner(input_filepath);
+	std::string runner_script = R"(OR A J
+AND B J
+AND C J
+NOT J J
+AND D J
+OR E T
+OR H T
+AND T J
+RUN
+)";
+	int64_t part2 = runner.run_on(outputs, runner_script);
+	display(outputs);
+	outputs.clear();
+
+	return { part1, part2 };
+}
+
 int main(int argc, char* argv[])
 {
 	size_t day;
@@ -1679,7 +1715,8 @@ int main(int argc, char* argv[])
 		{ 15, day_15 },
 		{ 16, day_16 },
 		{ 17, day_17 },
-		{ 19, day_19 }
+		{ 19, day_19 },
+		{ 21, day_21 }
 	};
 
 	auto[part_1_answer, part_2_answer] = calling_map[day](input_filepath);
