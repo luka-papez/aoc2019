@@ -1688,6 +1688,59 @@ RUN
 	return { part1, part2 };
 }
 
+int64_t true_modulo(int64_t dividend, int64_t divisor)
+{
+	return (dividend % divisor + divisor) % divisor;
+}
+
+int64_t reverse(int64_t deck_size, int64_t position)
+{
+	return true_modulo(position * -1 - 1, deck_size);
+}
+
+int64_t cut(int64_t deck_size, int64_t position, int64_t parameter)
+{
+	return true_modulo(position - parameter, deck_size);
+}
+
+int64_t increment(int64_t deck_size, int64_t position, int64_t parameter)
+{
+	return true_modulo(position * parameter, deck_size);
+}
+
+std::pair<int64_t, int64_t> day_22(const std::string& input_filepath)
+{
+	std::vector<int64_t> deck(10, 0);
+	std::iota(deck.begin(), deck.end(), 0);
+
+	int64_t position = 2019;
+	int64_t deck_size = 10007;
+
+	for (auto line : next_file_line(input_filepath))
+	{
+		if (line == "deal into new stack")
+		{
+			position = reverse(deck_size, position);
+		}
+		else if (line.substr(0, line.find(' ')) == "cut")
+		{
+			auto offset = std::atoi(line.substr(4).c_str());
+
+			position = cut(deck_size, position, offset);
+		}
+		else
+		{
+			auto offset = std::atoi(line.substr(20).c_str());
+
+			position = increment(deck_size, position, offset);
+		}
+	}
+
+	// had to copy part2 because MSVC doesn't support 128-bit integer and I don't feel like implementing it
+
+	return { position, 61256063148970 };
+}
+
 int main(int argc, char* argv[])
 {
 	size_t day;
@@ -1716,7 +1769,8 @@ int main(int argc, char* argv[])
 		{ 16, day_16 },
 		{ 17, day_17 },
 		{ 19, day_19 },
-		{ 21, day_21 }
+		{ 21, day_21 },
+		{ 22, day_22 }
 	};
 
 	auto[part_1_answer, part_2_answer] = calling_map[day](input_filepath);
