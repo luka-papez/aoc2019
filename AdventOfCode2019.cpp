@@ -5,6 +5,7 @@
 #include <numeric>
 
 #include <array>
+#include <bitset>
 #include <iostream>
 #include <map>
 #include <set>
@@ -1384,6 +1385,11 @@ int64_t flood_fill(std::map<position_t, char>& world, position_t start)
 	return steps_needed - 1; // because i'm counting the first one as a step
 }
 
+auto manhattan_distance(position_t p1, position_t p2) -> int64_t
+{
+	return std::abs(p2.second - p1.second) + std::abs(p2.first - p1.first);
+}
+
 std::pair<int64_t, int64_t> day_15(const std::string& input_filepath)
 {
 	std::vector<int64_t> opcodes;
@@ -1398,10 +1404,6 @@ std::pair<int64_t, int64_t> day_15(const std::string& input_filepath)
 	droid.step(program);
 	display(droid.world);
 
-	auto manhattan_distance = [](position_t p1, position_t p2) -> int64_t
-	{
-		return std::abs(p2.second - p1.second) + std::abs(p2.first - p1.first);
-	};
 	std::vector<position_t> path_to_oxygen;
 	a_star(droid.world, {}, droid.oxygen_position, manhattan_distance, path_to_oxygen);
 
@@ -1574,6 +1576,94 @@ std::pair<int64_t, int64_t> day_17(const std::string& input_filepath)
 	part2_vm.memory[0] = 2;
 
 	return { part1_solution, part2_vm.run_on(input) };
+}
+
+int64_t expand_breadth_first(std::map<position_t, char>& world, position_t& origin)
+{
+	using keyset_t = size_t;
+	using visited_node_t = std::tuple<position_t, keyset_t>;
+	using frontier_node_t = std::tuple<position_t, std::bitset<26>, int64_t>;
+
+	std::set<visited_node_t> visited;
+	std::queue<frontier_node_t> frontier;
+	frontier_node_t current;
+
+	size_t total_keys = std::count_if(world.begin(), world.end(), [](const auto& p) { return std::islower(p.second); });
+
+	frontier.push({ origin, {}, 0 });
+	visited.insert({ origin, 0 });
+
+	while (!frontier.empty())
+	{
+		current = frontier.front();
+		frontier.pop();
+		auto &[pos, keys, steps] = current;
+
+		if (keys.count() == total_keys)
+		{
+			return steps;
+		}
+
+		for (int64_t direction = north; direction < direction_last; direction++)
+		{
+			auto next = current;
+			auto &[next_pos, keys, steps] = next;
+
+			next_pos = next_pos + direction;
+			steps += 1;
+
+			if (world[next_pos] == wall)
+				continue;
+				
+			if (visited.find({ next_pos, keys.to_ulong() }) != visited.end())
+				continue;
+
+			if (std::isupper(world[next_pos]))
+			{
+				if (!keys[std::tolower(world[next_pos]) - 'a'])
+					continue;
+			}
+
+			if (std::islower(world[next_pos]))
+			{
+				keys[world[next_pos] - 'a'] = true;
+			}
+
+			frontier.push(next);
+		}
+
+		visited.insert({ pos, keys.to_ulong() });
+	}
+
+	return 0;
+}
+
+
+std::pair<int64_t, int64_t> day_18(const std::string& input_filepath)
+{
+	std::map<position_t, char> world;
+	std::map<char, position_t> key_locations;
+
+	int64_t y = 0;
+	for (auto line : next_file_line(input_filepath))
+	{
+		int64_t x = 0;
+		for (int64_t x = 0; x < line.size(); x++)
+		{
+			world[{ x, y }] = line[x];
+
+			if (std::islower(line[x]) || line[x] == '@')
+				key_locations[line[x]] = { x, y };
+		}
+
+		y++;
+	}
+
+	display(world, false);
+
+	auto part1 = expand_breadth_first(world, key_locations['@']);
+
+	return { part1, 0 };
 }
 
 std::pair<int64_t, int64_t> day_19(const std::string& input_filepath)
@@ -1768,6 +1858,7 @@ int main(int argc, char* argv[])
 		{ 15, day_15 },
 		{ 16, day_16 },
 		{ 17, day_17 },
+		{ 18, day_18 },
 		{ 19, day_19 },
 		{ 21, day_21 },
 		{ 22, day_22 }
