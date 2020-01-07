@@ -16,6 +16,7 @@
 
 #include "intcode.hpp"
 #include "input_utilities.hpp"
+#include "search_algorithms.hpp"
 
 std::pair<int64_t, int64_t> day_1(const std::string& input_filepath)
 {
@@ -1578,71 +1579,79 @@ std::pair<int64_t, int64_t> day_17(const std::string& input_filepath)
 	return { part1_solution, part2_vm.run_on(input) };
 }
 
-int64_t expand_breadth_first(std::map<position_t, char>& world, position_t& origin)
+using world_t = std::map<position_t, char>;
+
+std::experimental::generator<position_t> get_neighbouring_tiles(const world_t &world, const position_t &current)
 {
-	using keyset_t = size_t;
-	using visited_node_t = std::tuple<position_t, keyset_t>;
-	using frontier_node_t = std::tuple<position_t, std::bitset<26>, int64_t>;
-
-	std::set<visited_node_t> visited;
-	std::queue<frontier_node_t> frontier;
-	frontier_node_t current;
-
-	size_t total_keys = std::count_if(world.begin(), world.end(), [](const auto& p) { return std::islower(p.second); });
-
-	frontier.push({ origin, {}, 0 });
-	visited.insert({ origin, 0 });
-
-	while (!frontier.empty())
-	{
-		current = frontier.front();
-		frontier.pop();
-		auto &[pos, keys, steps] = current;
-
-		if (keys.count() == total_keys)
-		{
-			return steps;
-		}
-
-		for (int64_t direction = north; direction < direction_last; direction++)
-		{
-			auto next = current;
-			auto &[next_pos, keys, steps] = next;
-
-			next_pos = next_pos + direction;
-			steps += 1;
-
-			if (world[next_pos] == wall)
-				continue;
-				
-			if (visited.find({ next_pos, keys.to_ulong() }) != visited.end())
-				continue;
-
-			if (std::isupper(world[next_pos]))
-			{
-				if (!keys[std::tolower(world[next_pos]) - 'a'])
-					continue;
-			}
-
-			if (std::islower(world[next_pos]))
-			{
-				keys[world[next_pos] - 'a'] = true;
-			}
-
-			frontier.push(next);
-		}
-
-		visited.insert({ pos, keys.to_ulong() });
-	}
-
-	return 0;
+	for (int64_t direction = north; direction < direction_last; direction++)
+		co_yield current + direction;
 }
 
+using position_and_keys_t = std::pair<position_t, std::bitset<26>>;
+
+template<typename T>
+inline void hash_combine(std::size_t& seed, const T& val)
+{
+	std::hash<T> hasher;
+	seed ^= hasher(val) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+namespace std {
+	template <>
+	struct hash<position_t>
+	{
+		size_t operator()(const position_t &value) const
+		{
+			size_t seed = 0;
+			hash_combine(seed, value.first);
+			hash_combine(seed, value.second);
+			return seed;
+		}
+	};
+
+	template <> 
+	struct hash<position_and_keys_t>
+	{
+		size_t operator()(const position_and_keys_t &value) const
+		{
+			size_t seed = 0;
+			hash_combine(seed, value.first);
+			hash_combine(seed, value.second);
+			return seed;
+		}
+	};
+}
+
+std::experimental::generator<position_and_keys_t> node_expander_18(const world_t &world, const position_and_keys_t &node)
+{
+	auto[pos, keys] = node;
+
+	for (auto next_pos : get_neighbouring_tiles(world, pos))
+	{
+		if (!world.count(next_pos) || world.at(next_pos) == wall)
+			continue;
+
+		auto tile = world.at(next_pos);
+
+		if (std::isupper(tile))
+		{
+			if (!keys[std::tolower(tile) - 'a'])
+				continue;
+		}
+
+		auto next_keys = keys;
+		if (std::islower(tile))
+			next_keys[tile - 'a'] = true;
+
+		co_yield{ next_pos, next_keys };
+	}
+		
+};
 
 std::pair<int64_t, int64_t> day_18(const std::string& input_filepath)
 {
-	std::map<position_t, char> world;
-	std::map<char, position_t> key_locations;
+	world_t world;
+	std::map<char, position_t> relevant_locations;
 
 	int64_t y = 0;
 	for (auto line : next_file_line(input_filepath))
@@ -1653,7 +1662,7 @@ std::pair<int64_t, int64_t> day_18(const std::string& input_filepath)
 			world[{ x, y }] = line[x];
 
 			if (std::islower(line[x]) || line[x] == '@')
-				key_locations[line[x]] = { x, y };
+				relevant_locations[line[x]] = { x, y };
 		}
 
 		y++;
@@ -1661,7 +1670,18 @@ std::pair<int64_t, int64_t> day_18(const std::string& input_filepath)
 
 	display(world, false);
 
-	auto part1 = expand_breadth_first(world, key_locations['@']);
+	search_algorithms::AStar<world_t, position_and_keys_t> astar(
+		world,
+		[&](const world_t&, const position_and_keys_t &node) { return node.second.count() == (relevant_locations.size() - 1); }, // @ is counted as relevant
+		node_expander_18,
+		search_algorithms::unit_transition_cost<world_t, position_and_keys_t>,
+		search_algorithms::null_heuristic<world_t, position_and_keys_t>
+	);
+
+	std::vector<position_and_keys_t> path;
+	astar.search({ relevant_locations['@'], {} }, path);
+	
+	auto part1 = path.size() - 1; // path includes the starting point but it doesn't need a step to get there
 
 	return { part1, 0 };
 }
