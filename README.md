@@ -12,7 +12,6 @@ but the lack of online resources makes them a bit confusing in some cases.
 
 ## Structured bindings
 Again, I didn't really go into the gory details because they just worked as I wanted them to.
-
 These construct make code immensely more readable, I like them a lot.
 
 ## Floating point template parameters
@@ -20,6 +19,11 @@ Are not allowed by the standard.
 
 ## Modulo vs. remainder
 % means remainder in C. The sign of `a rem b` is that of `a`, while in `a mod b` the sign is that of b.
+
+## `priority_queue`
+Is a priority queue in C++ (obviously) and by default the value with the highest priority is on top. This means
+that if you want to want model something based on `cost` instead of `priority`, you usually need to invert the 
+comparator logic.
 
 ## OOP makes sense
 Somehow I'm used to writing a lot of free functions and more of procedural-oriented style of code.
