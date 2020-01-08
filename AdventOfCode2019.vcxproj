@@ -154,6 +154,8 @@
   <ItemGroup>
     <ClInclude Include="input_utilities.hpp" />
     <ClInclude Include="intcode.hpp" />
+    <ClInclude Include="itertools\product.hpp" />
+    <ClInclude Include="itertools\zip.hpp" />
     <ClInclude Include="search_algorithms.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Header Files\itertools">
+      <UniqueIdentifier>{62161f1b-dce3-426e-9eaf-87f0cec22cd5}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AdventOfCode2019.cpp">
@@ -28,6 +31,12 @@
     </ClInclude>
     <ClInclude Include="search_algorithms.hpp">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="itertools\product.hpp">
+      <Filter>Header Files\itertools</Filter>
+    </ClInclude>
+    <ClInclude Include="itertools\zip.hpp">
+      <Filter>Header Files\itertools</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
