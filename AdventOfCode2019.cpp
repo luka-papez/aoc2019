@@ -19,9 +19,6 @@
 #include "input_utilities.hpp"
 #include "search_algorithms.hpp"
 
-#include "itertools/product.hpp"
-#include "itertools/zip.hpp"
-
 std::pair<int64_t, int64_t> day_1(const std::string& input_filepath)
 {
 	int64_t module_fuel_requirements{};
@@ -1192,8 +1189,6 @@ std::pair<int64_t, int64_t> day_14(const std::string& input_filepath)
 	return { ore_for_one_fuel, lower_bound };
 }
 
-using position_t = std::pair<int64_t, int64_t>;
-
 enum direction_t : int64_t
 {
 	north = 1,
@@ -1591,8 +1586,15 @@ std::experimental::generator<position_t> get_neighbouring_tiles(const world_t &w
 		co_yield current + direction;
 }
 
+using start_point_t = char;
 using keys_t = std::bitset<26>;
 using position_and_keys_t = std::pair<position_t, keys_t>;
+using part2_position_and_keys_t = std::pair<std::array<char, 4>, std::bitset<26>>;
+using keys_and_doors_en_route_t = std::pair<keys_t, keys_t>;
+using end_point_t = std::pair<char, keys_and_doors_en_route_t>;
+using position_and_items_t = std::pair<position_t, keys_and_doors_en_route_t>;
+
+using transformed_world_t = std::unordered_map<start_point_t, std::vector<end_point_t>>;
 
 template<typename T>
 inline void hash_combine(std::size_t& seed, const T& val)
@@ -1625,15 +1627,70 @@ namespace std {
 			return seed;
 		}
 	};
+
+	template <>
+	struct hash<position_and_items_t>
+	{
+		size_t operator()(const position_and_items_t &value) const
+		{
+			size_t seed = 0;
+			hash_combine(seed, value.first);
+			hash_combine(seed, value.second.first);
+			hash_combine(seed, value.second.second);
+			return seed;
+		}
+	};
+
+	template <>
+	struct hash<part2_position_and_keys_t>
+	{
+		size_t operator()(const part2_position_and_keys_t &value) const
+		{
+			size_t seed = 0;
+			hash_combine(seed, value.first[0]);
+			hash_combine(seed, value.first[1]);
+			hash_combine(seed, value.first[2]);
+			hash_combine(seed, value.first[3]);
+			hash_combine(seed, value.second);
+			return seed;
+		}
+	};
 }
 
-std::experimental::generator<position_and_keys_t> node_expander_18_1(const world_t &world, const position_and_keys_t &node)
+std::experimental::generator<position_and_items_t> get_next_steps_mark_keys_and_doors(const world_t &world, const position_and_items_t &node)
+{
+	auto[pos, keys_and_doors] = node;
+
+	for (auto next_pos : get_neighbouring_tiles(world, pos))
+	{
+		if (world.find(next_pos) == world.end())
+			continue;
+
+		auto tile = world.at(next_pos);
+
+		if (tile == wall)
+			continue;
+
+		auto next_keys  = keys_and_doors.first;
+		auto next_doors = keys_and_doors.second;
+
+		if (std::isupper(tile))
+			next_doors[tile - 'A'] = true;
+
+		else if (std::islower(tile))
+			next_keys[tile - 'a'] = true;
+		
+		co_yield{ next_pos, { next_keys, next_doors } };
+	}
+}
+
+std::experimental::generator<position_and_keys_t> get_next_steps(const world_t &world, const position_and_keys_t &node)
 {
 	auto[pos, keys] = node;
 
 	for (auto next_pos : get_neighbouring_tiles(world, pos))
 	{
-		if (!world.count(next_pos) || world.at(next_pos) == wall)
+		if (world.find(next_pos) == world.end() || world.at(next_pos) == wall)
 			continue;
 
 		auto tile = world.at(next_pos);
@@ -1650,51 +1707,34 @@ std::experimental::generator<position_and_keys_t> node_expander_18_1(const world
 
 		co_yield{ next_pos, next_keys };
 	}	
-};
+}
 
-using part2_position_and_keys_t = std::pair<std::array<position_t, 4>, std::bitset<26>>;
-
-std::experimental::generator<part2_position_and_keys_t> node_expander_18_2(const world_t &world, const part2_position_and_keys_t &node)
+std::experimental::generator<part2_position_and_keys_t> node_expander_18_2(const transformed_world_t &world, const part2_position_and_keys_t &node)
 {
-	std::array<std::vector<position_and_keys_t>, 4> possible_steps;
+	auto &[starting_pos, starting_keys] = node;
+	std::remove_const_t<decltype(starting_pos)> possible_steps = starting_pos;
 
-	auto &[state, keys] = node;
-
-	for (auto&[destination, pos] : iter::zip(possible_steps, state))
+	for (auto &current_pos : possible_steps)
 	{
-		for (auto next_pos : get_neighbouring_tiles(world, pos))
+		for (auto &[destination, keys_and_doors_en_route] : world.at(current_pos))
 		{
-			if (!world.count(next_pos) || world.at(next_pos) == wall)
+			if (std::isdigit(destination))
 				continue;
 
-			auto tile = world.at(next_pos);
+			auto&[keys_en_route, doors_en_route] = keys_and_doors_en_route;
+			auto next_keys = starting_keys | keys_en_route;
 
-			if (std::isupper(tile))
-			{
-				if (!keys[std::tolower(tile) - 'a'])
-					continue;
-			}
+			if ((next_keys & doors_en_route).count() < doors_en_route.count())
+				continue;
 
-			auto next_keys = keys;
-			if (std::islower(tile))
-				next_keys[tile - 'a'] = true;
+			next_keys[destination - 'a'] = true;
 
-			destination.push_back({ next_pos, next_keys });
+			current_pos = destination;
+
+			co_yield{ possible_steps, next_keys };
+
+			possible_steps = starting_pos;
 		}
-	}
-
-	for (auto &[p1, p2, p3, p4] : iter::product(possible_steps[0], possible_steps[1],	possible_steps[2], possible_steps[3]))
-	{
-		decltype(node.second) total_keys;
-		decltype(node.first) positions;
-		
-		for (auto&[pos, keys] : { p1, p2, p3, p4 })
-		{
-			total_keys |= keys;
-			positions[positions.size()] = pos;
-		}
-
-		co_yield{ positions, total_keys };
 	}
 }
 
@@ -1703,11 +1743,11 @@ std::pair<int64_t, int64_t> day_18(const std::string& input_filepath)
 	world_t world;
 	std::map<char, position_t> relevant_locations;
 
-	int64_t y = 0;
+	uint8_t y = 0;
 	for (auto line : next_file_line(input_filepath))
 	{
-		int64_t x = 0;
-		for (int64_t x = 0; x < line.size(); x++)
+		uint8_t x = 0;
+		for (uint8_t x = 0; x < line.size(); x++)
 		{
 			world[{ x, y }] = line[x];
 
@@ -1719,21 +1759,133 @@ std::pair<int64_t, int64_t> day_18(const std::string& input_filepath)
 	}
 
 	display(world, false);
+	auto origin = relevant_locations['@'];
+	auto total_keys = (relevant_locations.size() - 1); // @ is counted as relevant
+	auto route_found_1 = [&](const world_t&, const position_and_keys_t &node) { return node.second.count() == total_keys; };
 
 	search_algorithms::AStar<world_t, position_and_keys_t> astar_1(
 		world,
-		[&](const world_t&, const position_and_keys_t &node) { return node.second.count() == (relevant_locations.size() - 1); }, // @ is counted as relevant
-		node_expander_18_1,
+		route_found_1, 
+		get_next_steps,
 		search_algorithms::unit_transition_cost<world_t, position_and_keys_t>,
 		search_algorithms::null_heuristic<world_t, position_and_keys_t>
 	);
 
 	std::vector<position_and_keys_t> path_1;
-	astar_1.search({ relevant_locations['@'], {} }, path_1);
+	astar_1.search({ origin, {} }, path_1);
 	
-	auto part1 = path_1.size() - 1; // path includes the starting point but it doesn't need a step to get there
+	auto part_1 = path_1.size() - 1; // path includes the starting point but it doesn't need a step to get there
 
-	return { part1, 0 };
+	// part 2
+	decltype(part2_position_and_keys_t::first) origins_2;
+	auto route_found_2 = [&](const transformed_world_t&, const part2_position_and_keys_t &node) { return node.second.count() == total_keys; };
+
+	size_t idx = 0;
+	origin.first--;
+	origin.second--;
+	world[origin] = '0';
+	origins_2[idx++] = world[origin];
+	origin.first++;
+	world[origin] = '#';
+	origin.first++;
+	world[origin] = '1';
+	origins_2[idx++] = world[origin];
+	origin.second++;
+	world[origin] = '#';
+	origin.first--;
+	world[origin] = '#';
+	origin.first--;
+	world[origin] = '#';
+	origin.second++;
+	world[origin] = '2';
+	origins_2[idx++] = world[origin];
+	origin.first++;
+	world[origin] = '#';
+	origin.first++;
+	world[origin] = '3';
+	origins_2[idx++] = world[origin];
+
+	display(world, false);
+
+	transformed_world_t adjacency_graph;
+	std::map<char, std::map<char, size_t>> distances;
+
+	for (auto&[p1, start] : world)
+	{
+		for (auto&[p2, goal] : world)
+		{
+			if (start == goal)
+				continue;
+
+			if (start == wall || start == space || goal == wall || goal == space)
+				continue;
+
+			if (std::isupper(start) || std::isupper(goal) || std::isdigit(goal))
+				continue;
+
+			search_algorithms::AStar<world_t, position_and_items_t> meta_astar(
+				world,
+				[&](const auto &world, const auto &current) { return world.at(current.first) == goal; },
+				get_next_steps_mark_keys_and_doors,
+				search_algorithms::unit_transition_cost<world_t, position_and_items_t>,
+				search_algorithms::null_heuristic<world_t, position_and_items_t>
+			);
+
+			std::vector<position_and_items_t> path;
+			if (meta_astar.search({ p1, {} }, path))
+			{
+				adjacency_graph[start].push_back({ goal, { path.back().second.first, path.back().second.second} });
+				distances[start][goal] = path.size() - 1;
+			}
+		}
+	}
+
+	search_algorithms::AStar<transformed_world_t, part2_position_and_keys_t> astar_2(
+		adjacency_graph,
+		route_found_2,
+		node_expander_18_2,
+		[&](const auto &world, const auto &current, const auto &next) -> int64_t
+	{
+		for (size_t i = 0; i < current.first.size(); i++)
+		{
+			for (size_t j = 0; j < next.first.size(); j++)
+			{
+				auto current_pos = current.first[j];
+				auto next_pos = next.first[j];
+
+				if (current_pos != next_pos)
+					return distances[current_pos][next_pos];
+			}
+		}
+
+		return search_algorithms::infinite_cost_s;
+	},
+		search_algorithms::null_heuristic<transformed_world_t, part2_position_and_keys_t>
+	);
+
+	std::vector<part2_position_and_keys_t> path_2;
+	astar_2.search({ origins_2, {} }, path_2);
+
+	int64_t part_2 = 0;
+
+	for (size_t i = 0; i < path_2.size() - 1; i++)
+	{
+		for (size_t j = 0; j < std::tuple_size_v<part2_position_and_keys_t::first_type>; j++)
+		{
+			auto previous_step = path_2[i].first[j];
+			auto next_step = path_2[i + 1].first[j];	
+
+			if (previous_step != next_step)
+			{
+				std::cout << "Robot " << j << " collects key " << next_step << std::endl;
+				part_2 += distances[previous_step][next_step];
+
+				break;
+			}
+		}
+	}
+
+	return { part_1, part_2 };
 }
 
 std::pair<int64_t, int64_t> day_19(const std::string& input_filepath)
@@ -1748,11 +1900,11 @@ std::pair<int64_t, int64_t> day_19(const std::string& input_filepath)
 
 	std::map<position_t, char> world;
 
-	int64_t part1 = 0;
+	uint8_t part1 = 0;
 
-	for (int64_t y = 0; y < 50; y++)
+	for (uint8_t y = 0; y < 50; y++)
 	{
-		for (int64_t x = 0; x < 50; x++)
+		for (uint8_t x = 0; x < 50; x++)
 		{
 			IntcodeVM drones(opcodes);
 

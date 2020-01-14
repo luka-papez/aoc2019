@@ -7,6 +7,8 @@
 #include <tuple>
 
 namespace search_algorithms {
+	static constexpr auto infinite_cost_s = std::numeric_limits<int64_t>::max();
+
 	template <
 		typename WorldType,
 		typename NodeType
