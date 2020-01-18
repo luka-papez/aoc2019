@@ -1964,6 +1964,79 @@ std::pair<int64_t, int64_t> day_19(const std::string& input_filepath)
 	return { part1, 10000 * start_x + (y - ship_size) };
 }
 
+void parse_portals(world_t world /* intentional copy */)
+{
+	auto[width, height] = std::max_element(world.begin(), world.end())->first;
+
+	std::map<position_t, std::string> position_portal;
+
+	for (uint8_t y = 0; y <= height; y++)
+	{
+		for (uint8_t x = 0; x <= width; x++)
+		{
+			position_t pos = { x, y };
+
+			if (std::isupper(world[pos]))
+			{
+				// TODO: operator+ is messed up, east/west inverted
+				// TODO handling for inner portals
+
+				// outer left portal
+				if (world[pos + east] == space)
+				{
+					auto other = pos + west;
+					position_portal[pos] = { world[pos], world[other] };
+				}
+
+				// outer right portal
+				else if (world[pos + west] == space)
+				{
+					auto other = pos + east;
+					position_portal[other] = { world[other], world[pos] };
+				}
+
+				// outer top portal
+				else if (world[pos + south] == space)
+				{
+					auto other = pos + north;
+					position_portal[other] = { world[other], world[pos] };
+				}
+
+				// outer bottom portal
+				else if (world[pos + north] == space)
+				{
+					auto other = pos + south;
+					position_portal[pos] = { world[pos], world[other] };
+				}
+			}
+		}
+	}
+
+	return;
+}
+
+std::pair<int64_t, int64_t> day_20(const std::string &input_filepath)
+{
+	world_t world;
+
+	uint8_t y = 0;
+	for (auto line : next_file_line(input_filepath))
+	{
+		for (uint8_t x = 0; x < line.size(); x++)
+		{
+			world[{ x, y }] = line[x];
+		}
+
+		y++;
+	}
+
+	display(world, false);
+
+	parse_portals(world);
+
+	return { 0, 0 };
+}
+
 std::pair<int64_t, int64_t> day_21(const std::string& input_filepath)
 {
 	std::vector<int64_t> outputs;
@@ -2082,6 +2155,7 @@ int main(int argc, char* argv[])
 		{ 17, day_17 },
 		{ 18, day_18 },
 		{ 19, day_19 },
+		{ 20, day_20 },
 		{ 21, day_21 },
 		{ 22, day_22 }
 	};
