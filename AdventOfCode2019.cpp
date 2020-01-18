@@ -1230,6 +1230,30 @@ position_t operator+(position_t lhs, int64_t direction)
 	return lhs;
 }
 
+position_t operator-(position_t lhs, int64_t direction)
+{
+	switch (direction)
+	{
+	case direction_t::north:
+		lhs.second++;
+		break;
+
+	case direction_t::south:
+		lhs.second--;
+		break;
+
+	case direction_t::west:
+		lhs.first++;
+		break;
+
+	case direction_t::east:
+		lhs.first--;
+		break;
+	}
+
+	return lhs;
+}
+
 struct RepairDroid
 {
 	std::map<position_t, char> world;
@@ -1964,11 +1988,9 @@ std::pair<int64_t, int64_t> day_19(const std::string& input_filepath)
 	return { part1, 10000 * start_x + (y - ship_size) };
 }
 
-void parse_portals(world_t world /* intentional copy */)
+void parse_portals(world_t world /* intentional copy */, std::unordered_map<position_t, std::string> &position_portal)
 {
 	auto[width, height] = std::max_element(world.begin(), world.end())->first;
-
-	std::map<position_t, std::string> position_portal;
 
 	for (uint8_t y = 0; y <= height; y++)
 	{
@@ -1978,41 +2000,36 @@ void parse_portals(world_t world /* intentional copy */)
 
 			if (std::isupper(world[pos]))
 			{
-				// TODO: operator+ is messed up, east/west inverted
-				// TODO handling for inner portals
-
-				// outer left portal
+				// outer left or inner right portal
 				if (world[pos + east] == space)
 				{
-					auto other = pos + west;
-					position_portal[pos] = { world[pos], world[other] };
+					auto other = pos - east;
+					position_portal[pos] = { world[other], world[pos] };
 				}
 
 				// outer right portal
 				else if (world[pos + west] == space)
 				{
-					auto other = pos + east;
-					position_portal[other] = { world[other], world[pos] };
+					auto other = pos - west;
+					position_portal[pos] = { world[pos], world[other] };
 				}
 
 				// outer top portal
 				else if (world[pos + south] == space)
 				{
-					auto other = pos + north;
-					position_portal[other] = { world[other], world[pos] };
+					auto other = pos - south;
+					position_portal[pos] = { world[other], world[pos] };
 				}
 
 				// outer bottom portal
 				else if (world[pos + north] == space)
 				{
-					auto other = pos + south;
+					auto other = pos - north;
 					position_portal[pos] = { world[pos], world[other] };
 				}
 			}
 		}
 	}
-
-	return;
 }
 
 std::pair<int64_t, int64_t> day_20(const std::string &input_filepath)
@@ -2032,9 +2049,83 @@ std::pair<int64_t, int64_t> day_20(const std::string &input_filepath)
 
 	display(world, false);
 
-	parse_portals(world);
+	std::unordered_map<position_t, std::string> position_portal;
+	parse_portals(world, position_portal);
 
-	return { 0, 0 };
+	std::unordered_map<position_t, position_t> portal_destination;
+	for (auto &[position, portal] : position_portal)
+	{
+		if (auto dest = std::find_if(position_portal.begin(), position_portal.end(), [&](const auto &p)
+		{
+			return p.first != position && p.second == portal;
+		}); dest != position_portal.end())
+		{
+			portal_destination[position] = dest->first;
+		}
+	}
+
+	auto get_neighbours_with_portals = [&](const world_t &world, const position_t &current) -> std::experimental::generator<position_t>
+	{
+		auto yielding_position = current;
+
+		if (portal_destination.find(current) != portal_destination.end())
+		{
+			yielding_position = portal_destination[current];
+		}
+
+		for (auto &next_pos : get_neighbouring_tiles(world, yielding_position))
+		{
+			if (world.find(next_pos) == world.end())
+				continue;
+
+			auto tile = world.at(next_pos);
+
+			if (!(tile == space || std::isupper(tile)))
+				continue;
+
+			co_yield next_pos;
+		}
+	};
+
+	auto portals_distance_function = [&](const world_t &world, const position_t &current, const position_t &next) -> int64_t
+	{
+		return position_portal.find(current) == position_portal.end() ? 1 : 0;
+	};
+
+	search_algorithms::AStar<world_t, position_t> astar(
+		world,
+		[&](const auto &world, const auto &current)
+	{
+		if (position_portal.find(current) == position_portal.end())
+			return false;
+
+		return position_portal[current] == "ZZ";
+	},
+		get_neighbours_with_portals,
+		portals_distance_function,
+		search_algorithms::null_heuristic<world_t, position_t>
+		);
+
+	auto starting_point = std::find_if(position_portal.begin(), position_portal.end(), [](const auto &p)
+	{
+		return p.second == "AA";
+	})->first;
+
+	std::vector<position_t> path;
+	astar.search(starting_point, path);
+
+	auto path_length_ignoring_portals = [&](std::vector<position_t> &path)
+	{
+		return std::count_if(
+			path.begin(),
+			path.end(),
+			[&](const auto &p)
+		{
+			return position_portal.find(p) == position_portal.end();
+		});
+	};
+
+	return { path_length_ignoring_portals(path) - 1, 0 };
 }
 
 std::pair<int64_t, int64_t> day_21(const std::string& input_filepath)
