@@ -1218,11 +1218,11 @@ position_t operator+(position_t lhs, int64_t direction)
 		lhs.second++;
 		break;
 
-	case direction_t::east:
+	case direction_t::west:
 		lhs.first--;
 		break;
 
-	case direction_t::west:
+	case direction_t::east:
 		lhs.first++;
 		break;
 	}
