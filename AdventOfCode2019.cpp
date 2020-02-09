@@ -1628,6 +1628,19 @@ inline void hash_combine(std::size_t& seed, const T& val)
 }
 
 namespace std {
+	template <typename T1, typename T2>
+	struct hash<pair<T1, T2>>
+	{
+		size_t operator()(const pair<T1, T2> &value) const
+		{
+			size_t seed = 0;
+			hash_combine(seed, value.first);
+			hash_combine(seed, value.second);
+
+			return seed;
+		}
+	};
+
 	template <>
 	struct hash<position_t>
 	{
@@ -2092,6 +2105,11 @@ std::pair<int64_t, int64_t> day_20(const std::string &input_filepath)
 		return position_portal.find(current) == position_portal.end() ? 1 : 0;
 	};
 
+	auto starting_point = std::find_if(position_portal.begin(), position_portal.end(), [](const auto &p)
+	{
+		return p.second == "AA";
+	})->first;
+
 	search_algorithms::AStar<world_t, position_t> astar(
 		world,
 		[&](const auto &world, const auto &current)
@@ -2104,12 +2122,7 @@ std::pair<int64_t, int64_t> day_20(const std::string &input_filepath)
 		get_neighbours_with_portals,
 		portals_distance_function,
 		search_algorithms::null_heuristic<world_t, position_t>
-		);
-
-	auto starting_point = std::find_if(position_portal.begin(), position_portal.end(), [](const auto &p)
-	{
-		return p.second == "AA";
-	})->first;
+	);
 
 	std::vector<position_t> path;
 	astar.search(starting_point, path);
@@ -2125,7 +2138,72 @@ std::pair<int64_t, int64_t> day_20(const std::string &input_filepath)
 		});
 	};
 
-	return { path_length_ignoring_portals(path) - 1, 0 };
+	using position_and_level_t = std::pair<position_t, int16_t>;
+
+	auto[world_width, world_height] = std::max_element(world.begin(), world.end())->first;
+	auto is_outer_portal = [&](const position_t &portal)
+	{
+		return portal.first == 1 || portal.second == 1 || portal.first == world_width - 1 || portal.second == world_height - 1;
+	};
+
+	auto get_neighbours_with_portals_and_levels = [&](const world_t &world, const position_and_level_t &current) -> std::experimental::generator<position_and_level_t>
+	{
+		position_t yielding_position;
+		int16_t current_level;
+
+		yielding_position = current.first;
+		current_level = current.second;
+
+		auto next_level = current_level;
+
+		if (portal_destination.find(yielding_position) != portal_destination.end())
+		{
+			next_level += is_outer_portal(yielding_position) ? -1 : 1;
+
+			if (next_level < 0)
+				return;
+
+			yielding_position = portal_destination[yielding_position];
+		}
+
+		for (auto &next_pos : get_neighbouring_tiles(world, yielding_position))
+		{
+			if (world.find(next_pos) == world.end())
+				continue;
+
+			auto tile = world.at(next_pos);
+
+			if (!(tile == space || std::isupper(tile)))
+				continue;
+
+			co_yield{ next_pos, next_level };
+		}
+	};
+
+	search_algorithms::AStar<world_t, position_and_level_t> astar_2(
+		world,
+		[&](const auto &world, const auto &current)
+	{
+		if (position_portal.find(current.first) == position_portal.end())
+			return false;
+
+		return position_portal[current.first] == "ZZ" && current.second == 0;
+	},
+		get_neighbours_with_portals_and_levels,
+		[&](const auto &world, const auto &p1, const auto &p2)
+	{
+		return portals_distance_function(world, p1.first, p2.first);
+	},
+		search_algorithms::null_heuristic<world_t, position_and_level_t>
+	);
+
+	std::vector<position_and_level_t> path_2;
+	astar_2.search({ starting_point, 0 }, path_2);
+
+	std::vector<position_t> flattened_path_2;
+	std::transform(path_2.begin(), path_2.end(), std::back_inserter(flattened_path_2), [](const auto &p) { return p.first; });
+
+	return { path_length_ignoring_portals(path) - 1, path_length_ignoring_portals(flattened_path_2) - 1 };
 }
 
 std::pair<int64_t, int64_t> day_21(const std::string& input_filepath)
