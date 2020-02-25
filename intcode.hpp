@@ -21,7 +21,8 @@ enum class execution_state_t
 	normal = 0,
 	halted,
 	consumed_value,
-	provided_value
+	provided_value,
+	requested_value
 };
 
 struct InstructionParameter
@@ -105,24 +106,37 @@ struct IntcodeVM
 
 	static std::pair<std::shared_ptr<IntcodeInstruction>, parameters_t> IntcodeVM::parse_word(int64_t word);
 
-	execution_state_t run(int64_t& output, int64_t input)
+	execution_state_t run(int64_t& output, int64_t input, bool request_input = false)
 	{
 		execution_state_t state = execution_state_t::normal;
 		do
 		{
 			auto[instruction, parameters] = parse_word(memory[instruction_pointer]);
-			state = instruction->execute(*this, output, input, parameters);
 
+			if (request_input && instruction->to_string() == "Input")
+			{
+				state = execution_state_t::requested_value;
+				break;
+			}
+
+			state = instruction->execute(*this, output, input, parameters);
 		} while (state == execution_state_t::normal);
 
 		return state;
 	}
 
-	execution_state_t run(int64_t& output)
+	execution_state_t run(int64_t& output, bool request_input = false)
 	{
 		int64_t dummy_input = 0;
 
-		return run(output, dummy_input);
+		return run(output, dummy_input, request_input);
+	}
+
+	execution_state_t step(int64_t& output, int64_t input)
+	{
+		auto[instruction, parameters] = parse_word(memory[instruction_pointer]);
+
+		return instruction->execute(*this, output, input, parameters);
 	}
 
 	template <typename InputContainer, typename OutputContainer>
@@ -132,7 +146,7 @@ struct IntcodeVM
 		int64_t consumed = 0;
 		execution_state_t state{};
 
-		while ((state = run(vm_output, input[consumed])) != execution_state_t::halted)
+		while ((state = run(vm_output, input[consumed], false)) != execution_state_t::halted)
 		{
 			switch (state)
 			{

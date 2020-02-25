@@ -53,7 +53,7 @@ std::pair<int64_t, int64_t> day_2(const std::string& input_filepath)
 	IntcodeVM part1(opcodes);
 	part1.memory[1] = 12;
 	part1.memory[2] = 2;
-	part1.run(dummy, 0);
+	part1.run(dummy);
 
 	for (int64_t i = 0; i < 100; i++)
 	{
@@ -62,7 +62,7 @@ std::pair<int64_t, int64_t> day_2(const std::string& input_filepath)
 			IntcodeVM part2(opcodes);
 			part2.memory[1] = i;
 			part2.memory[2] = j;
-			part2.run(dummy, 0);
+			part2.run(dummy);
 
 			if (part2.memory[0] == 19690720)
 				return { part1.memory[0], 100 * i + j };
@@ -439,7 +439,7 @@ std::pair<int64_t, int64_t> day_7(const std::string& input_filepath)
 
 			amplifier.run(amplifier_output, phases[i]);
 			amplifier.run(amplifier_output, amplifier_output);
-			amplifier.run(amplifier_output, 0);
+			amplifier.run(amplifier_output);
 		}
 		
 		thruster_outputs.push_back(amplifier_output);
@@ -480,7 +480,7 @@ std::pair<int64_t, int64_t> day_7(const std::string& input_filepath)
 					break;
 				}
 
-				if (amplifier.run(amplifier_output, 0) != execution_state_t::provided_value)
+				if (amplifier.run(amplifier_output) != execution_state_t::provided_value)
 				{
 					halted = true;
 					break;
@@ -559,7 +559,7 @@ std::pair<int64_t, int64_t> day_9(const std::string& input_filepath)
 
 	std::vector<int64_t> results;
 
-	for (auto input : { 1, 2 })
+	for (int64_t input : { 1, 2 })
 	{
 		execution_state_t state{};
 		IntcodeVM vm(boost);
@@ -751,7 +751,7 @@ struct HullPainter
 		{
 			int64_t output = -1;
 
-			auto current_color = panel_colors[{ position_x, position_y }] == ' ' ? 0 : 1;
+			int64_t current_color = panel_colors[{ position_x, position_y }] == ' ' ? 0 : 1;
 
 			state = vm.run(output, current_color);
 			if (state == execution_state_t::halted) break;
@@ -1566,7 +1566,7 @@ std::pair<int64_t, int64_t> day_17(const std::string& input_filepath)
 	position_t current{};
 	int64_t output = 0;
 
-	while (part1_vm.run(output, 0) != execution_state_t::halted)
+	while (part1_vm.run(output) != execution_state_t::halted)
 	{
 		if (output == '\n')
 		{
@@ -1939,9 +1939,9 @@ std::pair<int64_t, int64_t> day_19(const std::string& input_filepath)
 
 	uint8_t part1 = 0;
 
-	for (uint8_t y = 0; y < 50; y++)
+	for (int64_t y = 0; y < 50; y++)
 	{
-		for (uint8_t x = 0; x < 50; x++)
+		for (int64_t x = 0; x < 50; x++)
 		{
 			IntcodeVM drones(opcodes);
 
@@ -1949,7 +1949,7 @@ std::pair<int64_t, int64_t> day_19(const std::string& input_filepath)
 			drones.run(output, y);
 			drones.run(output);
 
-			world[{ x, y }] = output ? '#' : '.';
+			world[{ static_cast<int8_t>(x), static_cast<int8_t>(y) }] = output ? '#' : '.';
 
 			if (output)
 				part1++;
@@ -2295,6 +2295,99 @@ std::pair<int64_t, int64_t> day_22(const std::string& input_filepath)
 	return { position, 61256063148970 };
 }
 
+std::pair<int64_t, int64_t> day_23(const std::string &input_filepath)
+{
+	constexpr size_t network_size = 50;
+	constexpr int64_t invalid_packet = -1;
+
+	std::vector<int64_t> opcodes;
+
+	for (auto line : next_file_line(input_filepath))
+		for (auto opcode : next_line_token<int64_t>(line))
+			opcodes.push_back(opcode);
+
+	std::vector<IntcodeVM> network(network_size, opcodes);
+
+	int64_t machine_id = 0;
+	for (auto &machine : network)
+	{
+		int64_t dummy_output;
+		machine.run(dummy_output, machine_id++);
+	}
+
+	std::vector<std::queue<int64_t>> input_queues(network_size);
+	std::vector<std::queue<int64_t>> output_buffers(network_size);
+
+	int64_t part_1{};
+
+	bool terminated = false;
+	do
+	{
+		int64_t machine_id = 0;
+
+		for (auto &machine : network)
+		{
+			int64_t output = 0;
+			int64_t input = invalid_packet;
+
+			auto &input_queue = input_queues[machine_id];
+
+			// the key is in this sentence:
+			// Once both values of the packet are read in this way, the packet is removed from the queue.
+			execution_state_t state{};
+			if (!input_queue.empty())
+			{
+				input = input_queue.front();
+				input_queue.pop();
+
+				state = machine.run(output, input);
+
+				input = input_queue.front();
+				input_queue.pop();
+
+				state = machine.run(output, input);
+			}
+			else
+			{
+				state = machine.step(output, input);
+			}
+
+			if (state == execution_state_t::provided_value)
+			{
+				auto &output_buffer = output_buffers[machine_id];
+
+				output_buffer.push(output);
+
+				if (output_buffer.size() == 3)
+				{
+					auto address = output_buffer.front();
+					output_buffer.pop();
+
+					auto packet_x = output_buffer.front();
+					output_buffer.pop();
+
+					auto packet_y = output_buffer.front();
+					output_buffer.pop();
+
+					if (address == 255)
+					{
+						part_1 = packet_y;
+						terminated = true;
+						break;
+					}
+
+					input_queues[address].push(packet_x);
+					input_queues[address].push(packet_y);
+				}
+			}
+
+			machine_id++;
+		}
+	} while (!terminated);
+	
+	return { part_1, 0 };
+}
+
 int main(int argc, char* argv[])
 {
 	size_t day;
@@ -2326,7 +2419,8 @@ int main(int argc, char* argv[])
 		{ 19, day_19 },
 		{ 20, day_20 },
 		{ 21, day_21 },
-		{ 22, day_22 }
+		{ 22, day_22 },
+		{ 23, day_23 }
 	};
 
 	auto[part_1_answer, part_2_answer] = calling_map[day](input_filepath);
