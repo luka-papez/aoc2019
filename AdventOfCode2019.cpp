@@ -9,6 +9,7 @@
 #include <iostream>
 #include <map>
 #include <set>
+#include <unordered_set>
 #include <string>
 #include <vector>
 #include <queue>
@@ -16,6 +17,7 @@
 #include <utility>
 #include <optional>
 #include <thread>
+#include <tuple>
 #include <mutex>
 
 #include "intcode.hpp"
@@ -2478,6 +2480,163 @@ std::pair<int64_t, int64_t> day_23(const std::string &input_filepath)
 	return { *part_1, *part_2 };
 }
 
+template <size_t Rows, size_t Cols>
+struct GameOfLife
+{
+public:
+
+	constexpr static size_t N = Rows * Cols;
+	using value_type = std::bitset<N>;
+
+	enum cell_type : uint8_t
+	{
+		empty = '.',
+		taken = '#'
+	};
+
+	GameOfLife(const std::vector<std::string> &world)
+	{
+		if (world.size() != Rows || 
+			std::any_of(world.begin(), world.end(), [](const auto &row) { return row.size() != Cols; }))
+			throw std::invalid_argument("the size of the input world does not matched the called class");
+
+		parse_world(world);
+	}
+
+	std::bitset<N> get_state()
+	{
+		return m_world;
+	}
+
+	void step()
+	{
+		std::bitset<N> next_state = m_world;
+
+		for (size_t i = 0; i < N; i++)
+		{
+			auto neighbours = get_neighbours(i);
+
+			if (next_state[i])
+			{
+				next_state[i] = neighbours.count() == 1;
+			}
+			else
+			{
+				next_state[i] = neighbours.count() == 1 || neighbours.count() == 2;
+			}
+		}
+
+		m_world = next_state;
+	}
+
+	void display()
+	{
+		world_t world;
+
+		for (size_t i = 0; i < N; i++)
+		{
+			auto[row, col] = from_index(i);
+
+			world[{ static_cast<int8_t>(col), static_cast<int8_t>(row) }] = m_world[i] ? taken : empty;
+		}
+
+		::display(world, false);
+	}
+
+private:
+
+	std::bitset<N> m_world;
+
+	size_t get_index(size_t row, size_t col)
+	{
+		return row * Cols + col;
+	}
+
+	std::pair<size_t, size_t> from_index(size_t index)
+	{
+		return { index / Cols, index % Cols };
+	}
+
+	std::bitset<N> parse_world(const std::vector<std::string> &world)
+	{
+		for (size_t row = 0; row < Rows; row++)
+		{
+			for (size_t col = 0; col < Cols; col++)
+			{
+				m_world[get_index(row, col)] = world[row][col] == taken;
+			}
+		}
+	}
+
+	std::bitset<N> get_neighbours(size_t index)
+	{
+		std::bitset<N> neighbours;
+
+		auto[row, col] = from_index(index);
+
+		if (row != 0)
+		{
+			auto other = get_index(row - 1, col);
+			neighbours[other] = m_world[other];
+		}
+		
+		if (col != 0)
+		{
+			auto other = get_index(row, col - 1);
+			neighbours[other] = m_world[other];
+		}
+
+		if (row != Rows - 1)
+		{
+			auto other = get_index(row + 1, col);
+			neighbours[other] = m_world[other];
+		}
+
+		if (col != Cols - 1)
+		{
+			auto other = get_index(row, col + 1);
+			neighbours[other] = m_world[other];
+		}
+
+		return neighbours;
+	}
+};
+
+std::pair<int64_t, int64_t> day_24(const std::string &input_filepath)
+{
+	std::vector<std::string> world;
+
+	for (auto line : next_file_line(input_filepath))
+	{
+		world.push_back(line);
+	}
+
+	using game_of_life_t = GameOfLife<5, 5>;
+
+	game_of_life_t game_of_life(world);
+	std::unordered_set<game_of_life_t::value_type> seen_states;
+
+	int64_t part_1 = -1;
+
+	while (true)
+	{
+		auto state = game_of_life.get_state();
+
+		bool success = false;
+		std::tie(std::ignore, success) = seen_states.insert(state);
+
+		if (!success)
+		{
+			part_1 = static_cast<int64_t>(state.to_ulong());
+			break;
+		}
+		
+		game_of_life.step();
+	}
+
+	return { part_1, 0 };
+}
+
 int main(int argc, char* argv[])
 {
 	size_t day;
@@ -2510,7 +2669,8 @@ int main(int argc, char* argv[])
 		{ 20, day_20 },
 		{ 21, day_21 },
 		{ 22, day_22 },
-		{ 23, day_23 }
+		{ 23, day_23 },
+		{ 24, day_24 }
 	};
 
 	auto[part_1_answer, part_2_answer] = calling_map[day](input_filepath);
