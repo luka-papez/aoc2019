@@ -14,6 +14,9 @@
 #include <queue>
 #include <deque>
 #include <utility>
+#include <optional>
+#include <thread>
+#include <mutex>
 
 #include "intcode.hpp"
 #include "input_utilities.hpp"
@@ -2295,6 +2298,41 @@ std::pair<int64_t, int64_t> day_22(const std::string& input_filepath)
 	return { position, 61256063148970 };
 }
 
+template<typename T>
+class thread_safe_queue
+{
+public:
+	void push(const T& value)
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		queue.push(value);
+	}
+
+	void pop()
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		queue.pop();
+	}
+
+	bool empty() const
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		
+		return queue.empty();
+	}
+
+	const T& front() const
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+
+		return queue.front();
+	}
+
+private:
+	std::queue<T> queue;
+	mutable std::mutex mutex;
+};
+
 std::pair<int64_t, int64_t> day_23(const std::string &input_filepath)
 {
 	constexpr size_t network_size = 50;
@@ -2315,47 +2353,50 @@ std::pair<int64_t, int64_t> day_23(const std::string &input_filepath)
 		machine.run(dummy_output, machine_id++);
 	}
 
-	std::vector<std::queue<int64_t>> input_queues(network_size);
+	using packet_t = std::pair<int64_t, int64_t>;
+	std::vector<thread_safe_queue<packet_t>> input_queues(network_size);
 	std::vector<std::queue<int64_t>> output_buffers(network_size);
 
-	int64_t part_1{};
+	std::optional<int64_t> part_1{};
 
+	int64_t nat_memory_x{};
+	int64_t nat_memory_y{};
+
+	std::mutex stdout_lock;
 	bool terminated = false;
-	do
-	{
-		int64_t machine_id = 0;
 
-		for (auto &machine : network)
+	auto network_node_thread = [&](int64_t machine_id)
+	{
+		auto &machine = network[machine_id];
+		auto &input_queue = input_queues[machine_id];
+		auto &output_buffer = output_buffers[machine_id];
+
+		while (!terminated)
 		{
 			int64_t output = 0;
-			int64_t input = invalid_packet;
 
-			auto &input_queue = input_queues[machine_id];
-
-			// the key is in this sentence:
-			// Once both values of the packet are read in this way, the packet is removed from the queue.
 			execution_state_t state{};
+
 			if (!input_queue.empty())
 			{
-				input = input_queue.front();
-				input_queue.pop();
+				auto &[input_1, input_2] = input_queue.front();
 
-				state = machine.run(output, input);
+				state = machine.run(output, input_1);
 
-				input = input_queue.front();
-				input_queue.pop();
+				if (state == execution_state_t::consumed_value)
+				{
+					input_queue.pop();
 
-				state = machine.run(output, input);
+					state = machine.run(output, input_2);
+				}
 			}
 			else
 			{
-				state = machine.step(output, input);
+				state = machine.run(output, invalid_packet);
 			}
 
 			if (state == execution_state_t::provided_value)
 			{
-				auto &output_buffer = output_buffers[machine_id];
-
 				output_buffer.push(output);
 
 				if (output_buffer.size() == 3)
@@ -2371,21 +2412,70 @@ std::pair<int64_t, int64_t> day_23(const std::string &input_filepath)
 
 					if (address == 255)
 					{
-						part_1 = packet_y;
+						if (!part_1)
+							part_1 = packet_y;
+
+						nat_memory_x = packet_x;
+						nat_memory_y = packet_y;
+
+						std::lock_guard<std::mutex> lock(stdout_lock);
+						//std::cout << "Machine " << machine_id << " sending {" << nat_memory_x << ", " << nat_memory_y << "} to NAT" << std::endl;
+					}
+					else
+					{
+						input_queues[address].push({ packet_x, packet_y });
+					}
+				}
+			}
+		}
+
+
+	};
+
+	std::optional<int64_t> part_2;
+	
+	std::thread nat_thread{
+	[&]()
+	{
+		while (true)
+		{
+			if (!part_1)
+				continue;
+
+			if (std::all_of(input_queues.begin(), input_queues.end(), [](const auto &q) { return q.empty(); }))
+			{
+				input_queues[0].push({ nat_memory_x, nat_memory_y });
+				
+				std::lock_guard<std::mutex> lock(stdout_lock);
+				std::cout << "Sent {" << nat_memory_x << ", " << nat_memory_y << "} from NAT" << std::endl;
+
+				if (part_2)
+				{
+					if (part_2 == nat_memory_y)
+					{
 						terminated = true;
 						break;
 					}
-
-					input_queues[address].push(packet_x);
-					input_queues[address].push(packet_y);
 				}
-			}
 
-			machine_id++;
+				part_2 = nat_memory_y;
+			}
 		}
-	} while (!terminated);
+	}
+	};
+
+	std::vector<std::thread> machine_threads;
+	machine_threads.reserve(network_size);
+
+	for (size_t machine_id = 0; machine_id < network_size; machine_id++)
+		machine_threads.emplace_back(network_node_thread, machine_id);
+
+	for (auto &thread : machine_threads)
+		thread.join();
 	
-	return { part_1, 0 };
+	nat_thread.join();
+
+	return { *part_1, *part_2 };
 }
 
 int main(int argc, char* argv[])
