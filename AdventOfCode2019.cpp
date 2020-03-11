@@ -2496,7 +2496,7 @@ public:
 
 	GameOfLife(const std::vector<std::string> &world)
 	{
-		if (world.size() != Rows || 
+		if (world.size() != Rows ||
 			std::any_of(world.begin(), world.end(), [](const auto &row) { return row.size() != Cols; }))
 			throw std::invalid_argument("the size of the input world does not matched the called class");
 
@@ -2557,7 +2557,7 @@ private:
 		return { index / Cols, index % Cols };
 	}
 
-	std::bitset<N> parse_world(const std::vector<std::string> &world)
+	void parse_world(const std::vector<std::string> &world)
 	{
 		for (size_t row = 0; row < Rows; row++)
 		{
@@ -2579,7 +2579,7 @@ private:
 			auto other = get_index(row - 1, col);
 			neighbours[other] = m_world[other];
 		}
-		
+
 		if (col != 0)
 		{
 			auto other = get_index(row, col - 1);
@@ -2602,6 +2602,262 @@ private:
 	}
 };
 
+template <size_t Rows, size_t Cols>
+struct RecursiveGameOfLife
+{
+private:
+
+	constexpr static size_t N = Rows * Cols;
+	using world_type = std::unordered_map<int64_t, std::bitset<N>>;
+	world_type m_world;
+
+public:
+
+	using value_type = std::bitset<N>;
+
+	enum cell_type : char
+	{
+		empty = '.',
+		taken = '#'
+	};
+
+	RecursiveGameOfLife(const std::vector<std::string> &world)
+	{
+		if (world.size() != Rows || 
+			std::any_of(world.begin(), world.end(), [](const auto &row) { return row.size() != Cols; }))
+			throw std::invalid_argument("the size of the input world does not matched the called class");
+
+		parse_world(world);
+	}
+
+	const world_type &get_state()
+	{
+		return m_world;
+	}
+
+	void step()
+	{
+		auto total_neighbours = [](std::array<std::bitset<N>, 3> &neighbours)
+		{
+			return std::accumulate(neighbours.begin(), neighbours.end(), size_t{},
+				[](const auto acc, const auto &it)
+			{
+				return acc + it.count();
+			});
+		};
+
+		world_type world_changes;
+
+		for (int64_t num_levels = (m_world.size() + 1) / 2, level = -num_levels; level <= num_levels; level++)
+		{
+			const auto &previous_state = m_world[level];
+			auto next_state = m_world[level];
+
+			for (size_t i = 0; i < N; i++)
+			{
+				auto[row, col] = from_index(i);
+
+				if (row == row_middle && col == col_middle)
+					continue;
+
+				auto num_neighbours = total_neighbours(get_neighbours(level, i));
+
+				if (previous_state[i])
+				{
+					next_state[i] = num_neighbours == 1;
+				}
+				else
+				{
+					next_state[i] = num_neighbours == 1 || num_neighbours == 2;
+				}
+			}
+
+			world_changes[level] = next_state;
+		}
+
+		for (auto &[level, state] : world_changes)
+			m_world[level] = state;
+	}
+
+	void display_levels()
+	{
+		std::unordered_map<int64_t, world_t> worlds;
+
+		for (int64_t levels = m_world.size(), level = -levels / 2; level <= levels / 2; level++)
+		{
+			for (size_t i = 0; i < N; i++)
+			{
+				auto[row, col] = from_index(i);
+
+				worlds[level][{ static_cast<int8_t>(col), static_cast<int8_t>(row) }] = m_world[level][i] ? taken : empty;
+			}
+		}
+		
+		for (int64_t levels = m_world.size() - 2, level = -levels / 2; level <= levels / 2; level++)
+			::display(worlds[level], false);
+	}
+
+	size_t count_bugs()
+	{
+		return std::accumulate(m_world.begin(), m_world.end(), size_t{},
+			[](const auto acc, const auto &p)
+		{
+			return acc + p.second.count();
+		});
+	}
+
+private:
+
+	size_t get_index(size_t row, size_t col)
+	{
+		return row * Cols + col;
+	}
+
+	std::pair<size_t, size_t> from_index(size_t index)
+	{
+		return { index / Cols, index % Cols };
+	}
+
+	void parse_world(const std::vector<std::string> &world)
+	{
+		for (size_t row = 0; row < Rows; row++)
+		{
+			for (size_t col = 0; col < Cols; col++)
+			{
+				m_world[0][get_index(row, col)] = world[row][col] == taken;
+			}
+		}
+	}
+
+	constexpr static size_t row_top      = 0;
+	constexpr static size_t row_middle   = Rows / 2;
+	constexpr static size_t above_middle = row_middle - 1;
+	constexpr static size_t below_middle = row_middle + 1;
+	constexpr static size_t row_bottom   = Rows - 1;
+
+	constexpr static size_t col_left     = 0;
+	constexpr static size_t col_middle   = Cols / 2;
+	constexpr static size_t left_middle  = col_middle - 1;
+	constexpr static size_t right_middle = col_middle + 1;
+	constexpr static size_t col_right    = Cols - 1;	
+
+	std::array<std::bitset<N>, 3> get_neighbours(int64_t level, size_t index)
+	{
+		auto[row, col] = from_index(index);
+
+		std::array<std::bitset<N>, 3> neighbours_all;
+		auto &[neighbours_down, neighbours, neighbours_up] = neighbours_all;
+
+		auto down = level - 1;
+		auto up = level + 1;
+
+		enum neighbour_t : uint8_t
+		{
+			above = 0,
+			below,
+			left,
+			right,
+			num_neighbours
+		};
+
+		std::bitset<num_neighbours> neighbours_covered;
+
+		// outsides special case - go one level up and find 4 neighbours
+		if (row == row_top)
+		{
+			neighbours_covered[above] = true;
+			auto index = get_index(above_middle, col_middle);
+			neighbours_up[index] = m_world[up][index];
+		}
+		else if (row == row_bottom)
+		{
+			neighbours_covered[below] = true;
+			auto index = get_index(below_middle, col_middle);
+			neighbours_up[index] = m_world[up][index];
+		}
+
+		// insides special case - go one level down and find Cols neighbours
+		if (row == above_middle && col > left_middle && col < right_middle)
+		{
+			neighbours_covered[below] = true;
+			for (size_t i = 0; i < Cols; i++)
+			{
+				auto index = get_index(row_top, i);
+				neighbours_down[index] = m_world[down][index];
+			}
+		}
+		else if (row == below_middle && col > left_middle && col < right_middle)
+		{
+			neighbours_covered[above] = true;
+			for (size_t i = 0; i < Cols; i++)
+			{
+				auto index = get_index(row_bottom, i);
+				neighbours_down[index] = m_world[down][index];
+			}
+		}
+
+		// outsides special case - go one level up and find 4 neighbours
+		if (col == col_left)
+		{
+			neighbours_covered[left] = true;
+			auto index = get_index(row_middle, left_middle);
+			neighbours_up[index] = m_world[up][index];
+		}
+		else if (col == col_right)
+		{
+			neighbours_covered[right] = true;
+			auto index = get_index(row_middle, right_middle);
+			neighbours_up[index] = m_world[up][index];
+		}
+
+		// insides special case - go one level down and find Rows neighbours
+		if (col == left_middle && row > above_middle && row < below_middle)
+		{
+			neighbours_covered[right] = true;
+			for (size_t i = 0; i < Rows; i++)
+			{
+				auto index = get_index(i, col_left);
+				neighbours_down[index] = m_world[down][index];
+			}
+		}
+		else if (col == right_middle && row > above_middle && row < below_middle)
+		{
+			neighbours_covered[left] = true;
+			for (size_t i = 0; i < Rows; i++)
+			{
+				auto index = get_index(i, col_right);
+				neighbours_down[index] = m_world[down][index];
+			}
+		}
+		
+		if (!neighbours_covered[above])
+		{
+			auto other = get_index(row - 1, col);
+			neighbours[other] = m_world[level][other];
+		}
+
+		if (!neighbours_covered[below])
+		{
+			auto other = get_index(row + 1, col);
+			neighbours[other] = m_world[level][other];
+		}
+			
+		if (!neighbours_covered[left])
+		{
+			auto other = get_index(row, col - 1);
+			neighbours[other] = m_world[level][other];
+		}
+
+		if (!neighbours_covered[right])
+		{
+			auto other = get_index(row, col + 1);
+			neighbours[other] = m_world[level][other];
+		}
+			
+		return neighbours_all;
+	}
+};
+
 std::pair<int64_t, int64_t> day_24(const std::string &input_filepath)
 {
 	std::vector<std::string> world;
@@ -2612,7 +2868,6 @@ std::pair<int64_t, int64_t> day_24(const std::string &input_filepath)
 	}
 
 	using game_of_life_t = GameOfLife<5, 5>;
-
 	game_of_life_t game_of_life(world);
 	std::unordered_set<game_of_life_t::value_type> seen_states;
 
@@ -2630,11 +2885,24 @@ std::pair<int64_t, int64_t> day_24(const std::string &input_filepath)
 			part_1 = static_cast<int64_t>(state.to_ulong());
 			break;
 		}
-		
+
 		game_of_life.step();
 	}
 
-	return { part_1, 0 };
+	// so many special cases, couldn't reuse code...
+	using recursive_game_of_life_t = RecursiveGameOfLife<5, 5>;
+	recursive_game_of_life_t recursive_game_of_life(world);
+	constexpr static size_t num_minutes = 200;
+
+	for (size_t i = 0; i < num_minutes; i++)
+	{
+		recursive_game_of_life.step();
+	}
+
+	recursive_game_of_life.display_levels();
+	int64_t part_2 = recursive_game_of_life.count_bugs();
+
+	return { part_1, part_2 };
 }
 
 int main(int argc, char* argv[])
