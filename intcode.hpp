@@ -146,7 +146,7 @@ struct IntcodeVM
 		int64_t consumed = 0;
 		execution_state_t state{};
 
-		while ((state = run(vm_output, input[consumed], false)) != execution_state_t::halted)
+		while ((state = run(vm_output, input[consumed], input.size() <= consumed)) != execution_state_t::halted)
 		{
 			switch (state)
 			{
@@ -156,6 +156,8 @@ struct IntcodeVM
 			case execution_state_t::provided_value:
 				output.push_back(static_cast<OutputContainer::value_type>(vm_output));
 				break;
+			case execution_state_t::requested_value:
+				return vm_output;
 			default:
 				break;
 			}

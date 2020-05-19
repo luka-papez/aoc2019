@@ -2905,6 +2905,30 @@ std::pair<int64_t, int64_t> day_24(const std::string &input_filepath)
 	return { part_1, part_2 };
 }
 
+std::pair<int64_t, int64_t> day_25(const std::string &input_filepath)
+{
+	IntcodeVM droid(input_filepath);
+
+	execution_state_t state = execution_state_t::normal;
+
+	std::string output;
+	std::string command;
+
+	std::cin.ignore();
+
+	while (true)
+	{
+		droid.run_on(output, command);
+		std::cout << output;
+		output.clear();
+		
+		std::getline(std::cin, command);
+		command.push_back('\n');
+	}
+
+	return { -1, -1 };
+}
+
 int main(int argc, char* argv[])
 {
 	size_t day;
@@ -2938,7 +2962,8 @@ int main(int argc, char* argv[])
 		{ 21, day_21 },
 		{ 22, day_22 },
 		{ 23, day_23 },
-		{ 24, day_24 }
+		{ 24, day_24 },
+		{ 25, day_25 }
 	};
 
 	auto[part_1_answer, part_2_answer] = calling_map[day](input_filepath);
