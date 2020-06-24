@@ -143,7 +143,7 @@ struct IntcodeVM
 	int64_t run_on(OutputContainer& output, InputContainer& input)
 	{
 		int64_t vm_output = 0;
-		int64_t consumed = 0;
+		size_t consumed = 0;
 		execution_state_t state{};
 
 		while ((state = run(vm_output, input[consumed], input.size() <= consumed)) != execution_state_t::halted)

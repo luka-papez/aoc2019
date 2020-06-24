@@ -19,6 +19,7 @@
 #include <thread>
 #include <tuple>
 #include <mutex>
+#include <regex>
 
 #include "intcode.hpp"
 #include "input_utilities.hpp"
@@ -1807,10 +1808,10 @@ std::pair<int64_t, int64_t> day_18(const std::string& input_filepath)
 
 	search_algorithms::AStar<world_t, position_and_keys_t> astar_1(
 		world,
-		route_found_1, 
+		route_found_1,
 		get_next_steps,
-		search_algorithms::unit_transition_cost<world_t, position_and_keys_t>,
-		search_algorithms::null_heuristic<world_t, position_and_keys_t>
+		search_algorithms::AStar<world_t, position_and_keys_t>::unit_transition_cost,
+		search_algorithms::AStar<world_t, position_and_keys_t>::null_heuristic
 	);
 
 	std::vector<position_and_keys_t> path_1;
@@ -1869,8 +1870,8 @@ std::pair<int64_t, int64_t> day_18(const std::string& input_filepath)
 				world,
 				[&](const auto &world, const auto &current) { return world.at(current.first) == goal; },
 				get_next_steps_mark_keys_and_doors,
-				search_algorithms::unit_transition_cost<world_t, position_and_items_t>,
-				search_algorithms::null_heuristic<world_t, position_and_items_t>
+				search_algorithms::AStar<world_t, position_and_items_t>::unit_transition_cost,
+				search_algorithms::AStar<world_t, position_and_items_t>::null_heuristic
 			);
 
 			std::vector<position_and_items_t> path;
@@ -1902,7 +1903,7 @@ std::pair<int64_t, int64_t> day_18(const std::string& input_filepath)
 
 		return search_algorithms::infinite_cost_s;
 	},
-		search_algorithms::null_heuristic<transformed_world_t, part2_position_and_keys_t>
+		search_algorithms::AStar<transformed_world_t, part2_position_and_keys_t>::null_heuristic
 	);
 
 	std::vector<part2_position_and_keys_t> path_2;
@@ -2126,7 +2127,7 @@ std::pair<int64_t, int64_t> day_20(const std::string &input_filepath)
 	},
 		get_neighbours_with_portals,
 		portals_distance_function,
-		search_algorithms::null_heuristic<world_t, position_t>
+		search_algorithms::AStar<world_t, position_t>::null_heuristic
 	);
 
 	std::vector<position_t> path;
@@ -2199,7 +2200,7 @@ std::pair<int64_t, int64_t> day_20(const std::string &input_filepath)
 	{
 		return portals_distance_function(world, p1.first, p2.first);
 	},
-		search_algorithms::null_heuristic<world_t, position_and_level_t>
+		search_algorithms::AStar<world_t, position_and_level_t>::null_heuristic
 	);
 
 	std::vector<position_and_level_t> path_2;
@@ -2905,25 +2906,331 @@ std::pair<int64_t, int64_t> day_24(const std::string &input_filepath)
 	return { part_1, part_2 };
 }
 
+namespace Day25
+{
+	using door_t = std::string;
+	using room_t = std::string;
+	using item_t = std::string;
+	using path_t = std::vector<door_t>;
+	using doors_t = std::unordered_set<door_t>;
+	using rooms_t = std::unordered_set<room_t>;
+	using items_t = std::unordered_set<item_t>;
+	using rooms_and_items_t = std::pair<rooms_t, items_t>;
+	using description_t = std::string;
+	using room_map_t = std::map<room_t, std::map<door_t, room_t>>;
+	using room_adjacency_t = std::map <room_t, rooms_t>;
+	using directions_t = std::unordered_map<std::pair<room_t, room_t>, door_t>;
+	using starship_explorer_t = search_algorithms::AStar<room_adjacency_t, room_t>;
+
+
+	std::regex room_name_regex("== (.*) ");
+	std::regex door_or_item_regex("\\- (.*)+?");
+
+	auto search(const std::string &haystack, const std::string &needle) 
+		-> std::string::const_iterator
+	{
+		return std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end());
+	};
+
+	auto parse_description(const description_t &description) -> std::tuple<room_t, doors_t, items_t>
+	{
+		std::smatch room_name_match;
+		std::regex_search(description, room_name_match, room_name_regex);
+		auto room_name = room_name_match[1].str();
+
+		auto items_index = search(description, "Items");
+
+		doors_t doors_here;
+		for (auto door_it = std::sregex_iterator(description.begin(), items_index, door_or_item_regex);
+			door_it != std::sregex_iterator();
+			door_it++
+			)
+		{
+			auto door = (*door_it)[1].str();
+			doors_here.insert(door);
+		}
+
+		items_t items_here;
+		for (auto item_it = std::sregex_iterator(items_index, description.end(), door_or_item_regex);
+			item_it != std::sregex_iterator();
+			item_it++
+			)
+		{
+			const auto item = (*item_it)[1].str();
+			items_here.insert(item);
+		}
+
+		return { room_name, doors_here, items_here };
+	};
+
+	door_t came_from(const door_t &door)
+	{
+		door_t inverse;
+
+		door_t d = door;
+		d.erase(std::remove_if(d.begin(), d.end(), ::isspace), d.end());
+
+		if (d == "north")
+			inverse = "south";
+
+		else if (d == "east")
+			inverse = "west";
+
+		else if (d == "west")
+			inverse = "east";
+
+		else if (d == "south")
+			inverse = "north";
+
+		else if (d.empty())
+			inverse = "";
+
+		else
+			throw std::runtime_error("invalid doors");
+
+		return inverse;
+	}
+
+	std::string  droid_input(const std::string &cmd)
+	{
+		return cmd + '\n';
+	};
+
+	// returns the name of the explored room
+	room_t explore_room(
+		IntcodeVM &droid,
+		room_map_t &room_map,
+		room_t previous_room = "",
+		door_t input = "")
+	{
+		std::string room_description;
+
+		droid.run_on(room_description, droid_input(input));
+		std::cout << "did: " << input;
+		std::cout << room_description;
+
+		auto[room_name, doors_here, items_here] = parse_description(room_description);
+
+		for (const auto &item : items_here)
+		{
+			const items_t harmful_items = {
+				"giant electromagnet",
+				"escape pod",
+				"infinite loop",
+				"molten lava",
+				"photons"
+			};
+
+			if (harmful_items.find(item) == harmful_items.end())
+			{
+				room_description.clear();
+				droid.run_on(room_description, droid_input("take " + item));
+				std::cout << room_description;
+			}
+		}
+
+		auto origin = came_from(input);
+		if (!origin.empty()) room_map[room_name][origin] = previous_room;
+
+		if (room_name == "Security Checkpoint")
+			return room_name;
+
+		auto already_went_to = [&](const auto &room_name, const auto &door)
+		{
+			return room_map.find(room_name) != room_map.end() &&
+				room_map[room_name].find(door) != room_map[room_name].end();
+		};
+
+		for (const auto &door : doors_here)
+		{
+			if (door == origin)
+				continue;
+				
+			if (already_went_to(room_name, door))
+				continue;
+
+			auto neighbour_room = explore_room(droid, room_map, room_name, door);
+			room_map[room_name][door] = neighbour_room;
+
+			auto way_back = came_from(door);
+			std::string description;
+			droid.run_on(description, droid_input(way_back));
+			std::cout << description;
+		}
+
+		return room_name;
+	};
+
+	void go_to_checkpoint(IntcodeVM &droid, std::string &description, const directions_t &directions)
+	{
+		auto[security_checkpoint, doors_here, items_here] = parse_description(
+			description.substr(description.find("== Security Checkpoint")));
+
+		door_t explored_door = std::find_if(directions.begin(), directions.end(), [&](const auto &p)
+		{
+			return p.first.first == security_checkpoint;
+		})->second;
+
+		door_t unexplored_door = *std::find_if(doors_here.begin(), doors_here.end(), [&](const auto &d)
+		{
+			return d != explored_door;
+		});
+
+		description.clear();
+		droid.run_on(description, droid_input(unexplored_door));
+		std::cout << "did: " << unexplored_door;
+		std::cout << description;
+	}
+};
+
+namespace std
+{
+	template <typename T>
+	struct hash<unordered_set<T>>
+	{
+		size_t operator()(const unordered_set<T> &value) const
+		{
+			size_t seed = 0;
+			for (const auto &s : value) hash_combine(seed, s);
+			return seed;
+		}
+	};
+}
+
+template <typename Container, typename Alphabet>
+Container lexicographic_next(const Container &input, const Alphabet &alphabet)
+{
+	using Iterator = Container::reverse_iterator;
+	using Char	   = Alphabet::value_type;
+
+	if (input.empty())
+		return { alphabet.front() };
+
+	auto container = input;
+	
+	size_t carry = 0;
+
+	const auto last  = alphabet.back();
+	const auto first = alphabet.front();
+
+	const auto follower = [&](Iterator it) -> Char
+	{
+		if (*it == last)
+			return first;
+
+		return *(++std::find(alphabet.begin(), alphabet.end(), *it));
+	};
+
+	for (auto it = container.rbegin(); it != container.rend(); it++)
+	{
+		if (*it == last)
+			carry = 1;
+		else
+			carry = 0;
+
+		*it = follower(it);
+
+		if (carry == 0)
+			break;
+	}
+
+	if (carry == 1)
+	{
+		container.insert(container.begin(), first);
+	}
+
+	return container;
+}
+
 std::pair<int64_t, int64_t> day_25(const std::string &input_filepath)
 {
+	using namespace Day25;
+
 	IntcodeVM droid(input_filepath);
-
-	execution_state_t state = execution_state_t::normal;
-
-	std::string output;
-	std::string command;
 
 	std::cin.ignore();
 
+	room_map_t room_map;
+	auto starting_room = explore_room(droid, room_map);
+
+	room_adjacency_t room_adjacency;
+	directions_t directions;
+	for (auto[room, door_to_adjacent] : room_map)
+	{
+		for (auto[door, adjacent] : door_to_adjacent)
+		{
+			room_adjacency[room].insert(adjacent);
+			directions[{ room, adjacent }] = door;
+		}
+	}
+
+	starship_explorer_t starship_explorer(
+		room_adjacency,
+		[](const room_adjacency_t &, const room_t &current)
+	{
+		return current == "Security Checkpoint";
+	},
+		[&](const room_adjacency_t &world, const room_t &current)
+		-> std::experimental::generator<room_t>
+	{
+		if (world.find(current) == world.end())
+		{
+			std::cout << current << std::endl;
+			throw std::runtime_error("exploration failed");
+		}
+
+		for (const auto adjacent : world.at(current))
+			co_yield adjacent;
+	},	
+		starship_explorer_t::unit_transition_cost,
+		starship_explorer_t::null_heuristic
+	);
+
+	std::vector<door_t> path;
+	starship_explorer.search(starting_room, path);
+
+	description_t description;
+	for (size_t i = 0; i < path.size() - 1; i++)
+	{
+		auto direction = directions[{ path[i], path[i + 1] }] + '\n';
+		description.clear();
+		droid.run_on(description, direction);
+
+		std::cout << "did: " << direction;
+		std::cout << description;
+	}
+
+	// TODO: call inv to see what we have, and then work from that
+	description_t inventory_desc;
+	droid.run_on(inventory_desc, std::string("inv\n"));
+	std::cout << inventory_desc;
+	auto[nothing1, nothing2, inventory_set] = parse_description(inventory_desc);
+	std::vector<item_t> inventory{ inventory_set.begin(), inventory_set.end() };
+
+	std::vector<item_t> items_to_drop;
 	while (true)
 	{
-		droid.run_on(output, command);
-		std::cout << output;
-		output.clear();
-		
-		std::getline(std::cin, command);
-		command.push_back('\n');
+		items_to_drop = lexicographic_next(items_to_drop, inventory);
+	
+		for (const auto &item : items_to_drop)
+		{
+			droid.run_on(droid_input("drop " + item));
+			std::cout << "dropped: " << item << std::endl;
+		}
+
+		go_to_checkpoint(droid, description, directions);
+
+		if (description.find("are lighter than") == std::string::npos 
+			&& description.find("are heavier than") == std::string::npos)
+		{
+			break;
+		}
+
+		for (const auto &item : items_to_drop)
+		{
+			droid.run_on(droid_input("take " + item));
+			std::cout << "took back: " << item << std::endl;
+		}
 	}
 
 	return { -1, -1 };
@@ -2931,13 +3238,6 @@ std::pair<int64_t, int64_t> day_25(const std::string &input_filepath)
 
 int main(int argc, char* argv[])
 {
-	size_t day;
-
-	std::cout << "which day do you want to solve?" << std::endl;
-	std::cin >> day;
-
-	auto input_filepath = "inputs/day" + std::to_string(day) + "input.txt";
-
 	std::map<size_t, std::function<std::pair<int64_t, int64_t>(const std::string&)>> calling_map = {
 		{ 1, day_1 },
 		{ 2, day_2 },
@@ -2965,6 +3265,13 @@ int main(int argc, char* argv[])
 		{ 24, day_24 },
 		{ 25, day_25 }
 	};
+
+	size_t day;
+
+	std::cout << "which day do you want to solve?" << std::endl;
+	std::cin >> day;
+	
+	auto input_filepath = "inputs/day" + std::to_string(day) + "input.txt";
 
 	auto[part_1_answer, part_2_answer] = calling_map[day](input_filepath);
 
